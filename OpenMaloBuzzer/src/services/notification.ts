@@ -41,7 +41,7 @@ export const showBuzzNotification = async (payload: BuzzPayload) => {
         {title: '5 min', pressAction: {id: 'five_min'}},
         {title: 'Busy', pressAction: {id: 'busy'}},
       ],
-      category: 'buzz',
+      category: 'buzz' as any,
       loopSound: true,
       ongoing: true,
       autoCancel: false,

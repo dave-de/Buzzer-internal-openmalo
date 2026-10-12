@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb connect:*)",
+      "Bash(npx react-native:*)",
+      "Bash(firebase deploy:*)",
+      "Bash(rm -rf node_modules/react-native-worklets/android/.cxx)",
+      "Bash(./gradlew clean:*)",
+      "Bash(adb disconnect:*)",
+      "Bash(adb:*)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(npx tsc:*)",
+      "Bash(./gradlew assembleRelease)"
+    ]
+  }
+}

@@ -1,7 +1,7 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, FlatList, ActivityIndicator} from 'react-native';
 import {Buzz} from '../types';
-import {getBuzzLog, getUsers} from '../services/firebase';
+import {getBuzzLogPage, getUsers} from '../services/firebase';
 
 interface Props {
   onBack: () => void;
@@ -11,6 +11,8 @@ const RESPONSE_MAP: Record<string, {label: string; color: string; icon: string}>
   ack: {label: 'Acknowledged', color: '#4CAF50', icon: '✓'},
   five_min: {label: '5 minutes', color: '#FF9800', icon: '⏱'},
   busy: {label: 'Busy', color: '#F44336', icon: '✗'},
+  cancelled: {label: 'Cancelled', color: '#888', icon: '✕'},
+  dismissed: {label: 'Dismissed', color: '#9C27B0', icon: '👀'},
   none: {label: 'No response', color: '#555', icon: '—'},
 };
 
@@ -18,18 +20,40 @@ const HistoryScreen: React.FC<Props> = ({onBack}) => {
   const [buzzes, setBuzzes] = useState<Buzz[]>([]);
   const [usersMap, setUsersMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const lastDocRef = useRef<any>(null);
 
   useEffect(() => {
-    Promise.all([getBuzzLog(7), getUsers()])
-      .then(([buzzList, userList]) => {
-        setBuzzes(buzzList);
+    const load = async () => {
+      try {
+        const [page, userList] = await Promise.all([
+          getBuzzLogPage(),
+          getUsers(),
+        ]);
+        setBuzzes(page.buzzes);
+        lastDocRef.current = page.lastDoc;
+        setHasMore(page.hasMore);
         const map: Record<string, string> = {};
         userList.forEach(u => { map[u.id] = u.name; });
         setUsersMap(map);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      } catch {}
+      setLoading(false);
+    };
+    load();
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await getBuzzLogPage(lastDocRef.current);
+      setBuzzes(prev => [...prev, ...page.buzzes]);
+      lastDocRef.current = page.lastDoc;
+      setHasMore(page.hasMore);
+    } catch {}
+    setLoadingMore(false);
+  }, [loadingMore, hasMore]);
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
@@ -93,6 +117,15 @@ const HistoryScreen: React.FC<Props> = ({onBack}) => {
     );
   };
 
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator color="#FF4D4D" size="small" />
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -101,13 +134,13 @@ const HistoryScreen: React.FC<Props> = ({onBack}) => {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Buzz Log</Text>
         <View style={styles.periodBadge}>
-          <Text style={styles.periodText}>7 days</Text>
+          <Text style={styles.periodText}>30 days</Text>
         </View>
       </View>
       <View style={styles.stats}>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>{buzzes.length}</Text>
-          <Text style={styles.statLabel}>Total</Text>
+          <Text style={styles.statLabel}>Loaded</Text>
         </View>
         <View style={styles.statItem}>
           <Text style={[styles.statNumber, {color: '#4CAF50'}]}>{buzzes.filter(b => b.response === 'ack').length}</Text>
@@ -131,10 +164,19 @@ const HistoryScreen: React.FC<Props> = ({onBack}) => {
       ) : buzzes.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.emptyIcon}>📭</Text>
-          <Text style={styles.emptyText}>No buzzes in the last 7 days</Text>
+          <Text style={styles.emptyText}>No buzzes in the last 30 days</Text>
         </View>
       ) : (
-        <FlatList data={buzzes} renderItem={renderItem} keyExtractor={item => item.id} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false} />
+        <FlatList
+          data={buzzes}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={renderFooter}
+        />
       )}
     </View>
   );
@@ -175,6 +217,7 @@ const styles = StyleSheet.create({
   responseIcon: {fontSize: 14, fontWeight: '700', marginRight: 6},
   responseLabel: {fontSize: 13, fontWeight: '700'},
   responseTime: {color: '#666', fontSize: 12},
+  footerLoader: {paddingVertical: 20, alignItems: 'center'},
 });
 
 export default HistoryScreen;

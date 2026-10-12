@@ -5,29 +5,26 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
-  Modal,
+  useWindowDimensions,
 } from 'react-native';
 import {User} from '../types';
 import {useUsers} from '../hooks/useUsers';
 import {getRecentBuzzes} from '../services/firebase';
 import {PRESENCE_TIMEOUT_MS} from '../constants';
 
-const {width} = Dimensions.get('window');
-const CARD_SIZE = (width - 48) / 3;
-
 interface Props {
   currentUser: User;
   onSelectUser: (user: User) => void;
   onSettings: () => void;
+  onProfile: () => void;
   onHistory: () => void;
-  onLogout: () => void;
 }
 
-const HomeScreen: React.FC<Props> = ({currentUser, onSelectUser, onSettings, onHistory, onLogout}) => {
+const HomeScreen: React.FC<Props> = ({currentUser, onSelectUser, onSettings, onProfile, onHistory}) => {
   const {users, isOnline} = useUsers(currentUser.id);
   const [recentIds, setRecentIds] = useState<string[]>([]);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const {width} = useWindowDimensions();
+  const CARD_SIZE = (width - 48) / 3;
 
   const canBuzz = (target: User) => {
     if (currentUser.role === 'owner' || currentUser.role === 'manager') return true;
@@ -60,7 +57,7 @@ const HomeScreen: React.FC<Props> = ({currentUser, onSelectUser, onSettings, onH
   const renderUserCard = useCallback(
     ({item}: {item: User}) => (
       <TouchableOpacity
-        style={styles.card}
+        style={[styles.card, {width: CARD_SIZE}]}
         onPress={() => onSelectUser(item)}
         activeOpacity={0.7}>
         <View style={styles.avatarContainer}>
@@ -82,7 +79,7 @@ const HomeScreen: React.FC<Props> = ({currentUser, onSelectUser, onSettings, onH
         <Text style={styles.cardRole}>{item.role}</Text>
       </TouchableOpacity>
     ),
-    [isOnline, onSelectUser],
+    [isOnline, onSelectUser, CARD_SIZE],
   );
 
   return (
@@ -100,8 +97,10 @@ const HomeScreen: React.FC<Props> = ({currentUser, onSelectUser, onSettings, onH
               <Text style={styles.headerBtnText}>Settings</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.logoutBtn} onPress={() => setShowLogoutModal(true)}>
-            <Text style={styles.logoutBtnText}>Logout</Text>
+          <TouchableOpacity style={styles.profileBtn} onPress={onProfile}>
+            <Text style={styles.profileBtnText}>
+              {currentUser.name.charAt(0).toUpperCase()}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -137,25 +136,6 @@ const HomeScreen: React.FC<Props> = ({currentUser, onSelectUser, onSettings, onH
         columnWrapperStyle={styles.gridRow}
       />
 
-      <Modal visible={showLogoutModal} transparent animationType="fade" onRequestClose={() => setShowLogoutModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalIconWrap}>
-              <Text style={styles.modalIcon}>👋</Text>
-            </View>
-            <Text style={styles.modalTitle}>Logout</Text>
-            <Text style={styles.modalMessage}>Are you sure you want to logout?</Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowLogoutModal(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalLogoutBtn} onPress={() => { setShowLogoutModal(false); onLogout(); }}>
-                <Text style={styles.modalLogoutText}>Logout</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -167,8 +147,8 @@ const styles = StyleSheet.create({
   headerButtons: {flexDirection: 'row', gap: 8},
   headerBtn: {backgroundColor: '#1A1A1A', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8},
   headerBtnText: {color: '#ccc', fontSize: 14, fontWeight: '600'},
-  logoutBtn: {backgroundColor: '#2a1515', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8},
-  logoutBtnText: {color: '#F44336', fontSize: 14, fontWeight: '600'},
+  profileBtn: {width: 36, height: 36, borderRadius: 18, backgroundColor: '#2a1515', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#FF4D4D'},
+  profileBtnText: {color: '#FF4D4D', fontSize: 16, fontWeight: '800'},
   sectionLabel: {color: '#666', fontSize: 12, fontWeight: '700', letterSpacing: 1, paddingHorizontal: 16, marginTop: 16, marginBottom: 8},
   recentSection: {borderBottomWidth: 1, borderBottomColor: '#1A1A1A', paddingBottom: 12},
   recentRow: {flexDirection: 'row', paddingHorizontal: 16, gap: 12},
@@ -178,7 +158,7 @@ const styles = StyleSheet.create({
   recentName: {color: '#fff', fontSize: 14, maxWidth: 80},
   grid: {paddingHorizontal: 12, paddingBottom: 24},
   gridRow: {gap: 8, paddingHorizontal: 4},
-  card: {width: CARD_SIZE, backgroundColor: '#1A1A1A', borderRadius: 16, alignItems: 'center', paddingVertical: 16, marginBottom: 8},
+  card: {backgroundColor: '#1A1A1A', borderRadius: 16, alignItems: 'center', paddingVertical: 16, marginBottom: 8},
   avatarContainer: {position: 'relative', marginBottom: 8},
   avatar: {width: 52, height: 52, borderRadius: 26, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center'},
   avatarOnline: {backgroundColor: '#1a3a1a'},
@@ -188,17 +168,6 @@ const styles = StyleSheet.create({
   dotOffline: {backgroundColor: '#555'},
   cardName: {color: '#fff', fontSize: 13, fontWeight: '600'},
   cardRole: {color: '#666', fontSize: 11, marginTop: 2, textTransform: 'capitalize'},
-  modalOverlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32},
-  modalBox: {backgroundColor: '#1A1A1A', borderRadius: 20, padding: 28, width: '100%', alignItems: 'center', borderWidth: 1, borderColor: '#333'},
-  modalIconWrap: {width: 64, height: 64, borderRadius: 32, backgroundColor: '#2a1515', alignItems: 'center', justifyContent: 'center', marginBottom: 16},
-  modalIcon: {fontSize: 30},
-  modalTitle: {color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 8},
-  modalMessage: {color: '#888', fontSize: 15, textAlign: 'center', marginBottom: 24},
-  modalButtons: {flexDirection: 'row', gap: 12, width: '100%'},
-  modalCancelBtn: {flex: 1, backgroundColor: '#252525', paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#333'},
-  modalCancelText: {color: '#ccc', fontSize: 16, fontWeight: '700'},
-  modalLogoutBtn: {flex: 1, backgroundColor: '#FF4D4D', paddingVertical: 14, borderRadius: 12, alignItems: 'center'},
-  modalLogoutText: {color: '#fff', fontSize: 16, fontWeight: '700'},
 });
 
 export default HomeScreen;

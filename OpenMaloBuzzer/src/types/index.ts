@@ -1,6 +1,6 @@
 export type UserRole = 'owner' | 'manager' | 'member';
 
-export type BuzzResponse = 'ack' | 'five_min' | 'busy' | 'none';
+export type BuzzResponse = 'ack' | 'five_min' | 'busy' | 'cancelled' | 'dismissed' | 'none';
 
 export interface User {
   id: string;

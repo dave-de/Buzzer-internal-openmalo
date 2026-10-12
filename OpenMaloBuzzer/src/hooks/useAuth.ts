@@ -1,6 +1,14 @@
 import {useState, useEffect, useCallback} from 'react';
 import {User} from '../types';
-import {login as authLogin, getStoredUser, logout as authLogout} from '../services/auth';
+import {
+  login as authLogin,
+  signup as authSignup,
+  deleteAccount as authDeleteAccount,
+  updateProfile as authUpdateProfile,
+  changePin as authChangePin,
+  getStoredUser,
+  logout as authLogout,
+} from '../services/auth';
 import {updateLastSeen} from '../services/firebase';
 
 export const useAuth = () => {
@@ -31,10 +39,34 @@ export const useAuth = () => {
     return u;
   }, []);
 
+  const signUp = useCallback(async (name: string, phone: string, pin: string, role: 'manager' | 'member' = 'member') => {
+    const u = await authSignup(name, phone, pin, role);
+    setUser(u);
+    return u;
+  }, []);
+
+  const deleteAccount = useCallback(async () => {
+    if (!user) return;
+    await authDeleteAccount(user.id);
+    setUser(null);
+  }, [user]);
+
+  const updateProfile = useCallback(async (data: {name?: string; phone?: string}) => {
+    if (!user) return;
+    const updated = await authUpdateProfile(user, data);
+    setUser(updated);
+  }, [user]);
+
+  const changePin = useCallback(async (currentPin: string, newPin: string) => {
+    if (!user) return;
+    await authChangePin(user, currentPin, newPin);
+    setUser(prev => prev ? {...prev, pin_hash: ''} : null);
+  }, [user]);
+
   const logout = useCallback(async () => {
     await authLogout();
     setUser(null);
   }, []);
 
-  return {user, loading, login, logout};
+  return {user, loading, login, signUp, deleteAccount, updateProfile, changePin, logout};
 };

@@ -6,34 +6,38 @@ const BATTERY_PROMPT_KEY = '@openmalo_battery_prompted';
 export const promptBatteryOptimization = async () => {
   if (Platform.OS !== 'android') return;
 
-  const prompted = await AsyncStorage.getItem(BATTERY_PROMPT_KEY);
-  if (prompted) return;
+  // Always try to request ignore battery optimizations
+  try {
+    await Linking.sendIntent(
+      'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+      [{key: 'package', value: 'package:com.openmalobuzzer'}],
+    );
+  } catch {
+    // If direct intent fails, show manual prompt
+    const prompted = await AsyncStorage.getItem(BATTERY_PROMPT_KEY);
+    if (prompted) return;
 
-  Alert.alert(
-    'Allow buzzes when app is closed',
-    'Tap "Allow" so you never miss a buzz — even when your phone is on silent or the app is closed.',
-    [
-      {
-        text: 'Allow',
-        onPress: async () => {
-          try {
-            await Linking.openSettings();
-          } catch {
-            Alert.alert(
-              'One more step',
-              'Go to Settings → Apps → OpenMalo Buzzer → Battery → Unrestricted',
-            );
-          }
-          await AsyncStorage.setItem(BATTERY_PROMPT_KEY, 'true');
+    Alert.alert(
+      'Important: Allow Background Activity',
+      'To receive buzzes when the app is closed, you must disable battery optimization for this app.\n\nGo to:\nSettings → Apps → OpenMalo Buzzer → Battery → Unrestricted',
+      [
+        {
+          text: 'Open Settings',
+          onPress: async () => {
+            try {
+              await Linking.openSettings();
+            } catch {}
+            await AsyncStorage.setItem(BATTERY_PROMPT_KEY, 'true');
+          },
         },
-      },
-      {
-        text: 'Skip',
-        style: 'cancel',
-        onPress: async () => {
-          await AsyncStorage.setItem(BATTERY_PROMPT_KEY, 'true');
+        {
+          text: 'Skip',
+          style: 'cancel',
+          onPress: async () => {
+            await AsyncStorage.setItem(BATTERY_PROMPT_KEY, 'true');
+          },
         },
-      },
-    ],
-  );
+      ],
+    );
+  }
 };

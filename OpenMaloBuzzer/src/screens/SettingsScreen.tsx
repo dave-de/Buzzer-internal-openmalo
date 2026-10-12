@@ -1,17 +1,16 @@
 import React, {useState, useEffect} from 'react';
 import {View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView} from 'react-native';
 import {User, Reason} from '../types';
-import {subscribeToUsers, subscribeToReasons, addUser, removeUser, resetUserPin, addReason, removeReason} from '../services/firebase';
+import {subscribeToUsers, subscribeToReasons, addUser, removeUser, resetUserPin, updateUserRole, addReason, removeReason} from '../services/firebase';
 import {hashPin} from '../services/auth';
 import {MAX_REASONS} from '../constants';
 
 interface Props {
   currentUser: User;
   onBack: () => void;
-  onLogout: () => void;
 }
 
-const SettingsScreen: React.FC<Props> = ({currentUser, onBack, onLogout}) => {
+const SettingsScreen: React.FC<Props> = ({currentUser, onBack}) => {
   const [users, setUsers] = useState<User[]>([]);
   const [reasons, setReasons] = useState<Reason[]>([]);
   const [showAddUser, setShowAddUser] = useState(false);
@@ -49,6 +48,18 @@ const SettingsScreen: React.FC<Props> = ({currentUser, onBack, onLogout}) => {
     ]);
   };
 
+  const handleChangeRole = (user: User) => {
+    const newRole = user.role === 'manager' ? 'member' : 'manager';
+    Alert.alert(
+      'Change Role',
+      `Change ${user.name}'s role to ${newRole}?`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Change', onPress: () => updateUserRole(user.id, newRole)},
+      ],
+    );
+  };
+
   const handleAddReason = async () => {
     if (!newReasonLabel.trim()) return;
     if (reasons.length >= MAX_REASONS) { Alert.alert('Limit', `Maximum ${MAX_REASONS} reasons allowed`); return; }
@@ -68,7 +79,7 @@ const SettingsScreen: React.FC<Props> = ({currentUser, onBack, onLogout}) => {
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack}><Text style={styles.backBtn}>← Back</Text></TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
-        <TouchableOpacity onPress={onLogout}><Text style={styles.logoutBtn}>Logout</Text></TouchableOpacity>
+        <View style={{width: 50}} />
       </View>
       <ScrollView style={styles.scroll}>
         <View style={styles.section}>
@@ -93,11 +104,19 @@ const SettingsScreen: React.FC<Props> = ({currentUser, onBack, onLogout}) => {
           {users.map(user => (
             <View key={user.id} style={styles.listItem}>
               <View style={styles.listItemLeft}>
-                <Text style={styles.listItemName}>{user.name}</Text>
-                <Text style={styles.listItemSub}>{user.phone} · {user.role}</Text>
+                <View style={styles.nameRow}>
+                  <Text style={styles.listItemName}>{user.name}</Text>
+                  <View style={[styles.roleBadge, user.role === 'owner' ? styles.roleBadgeOwner : user.role === 'manager' ? styles.roleBadgeManager : styles.roleBadgeMember]}>
+                    <Text style={[styles.roleBadgeText, user.role === 'owner' ? styles.roleBadgeTextOwner : user.role === 'manager' ? styles.roleBadgeTextManager : styles.roleBadgeTextMember]}>{user.role}</Text>
+                  </View>
+                </View>
+                <Text style={styles.listItemSub}>{user.phone}</Text>
               </View>
-              {user.id !== currentUser.id && (
+              {user.id !== currentUser.id && user.role !== 'owner' && (
                 <View style={styles.listItemActions}>
+                  <TouchableOpacity onPress={() => handleChangeRole(user)}>
+                    <Text style={styles.actionTextRole}>{user.role === 'manager' ? '↓' : '↑'}</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => handleResetPin(user)}><Text style={styles.actionText}>PIN</Text></TouchableOpacity>
                   <TouchableOpacity onPress={() => handleRemoveUser(user)}><Text style={[styles.actionText, styles.actionDanger]}>✕</Text></TouchableOpacity>
                 </View>
@@ -128,7 +147,6 @@ const styles = StyleSheet.create({
   header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12},
   backBtn: {color: '#FF4D4D', fontSize: 16, fontWeight: '600'},
   headerTitle: {color: '#fff', fontSize: 20, fontWeight: '700'},
-  logoutBtn: {color: '#F44336', fontSize: 14, fontWeight: '600'},
   scroll: {flex: 1},
   section: {paddingHorizontal: 16, marginBottom: 32},
   sectionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12},
@@ -145,10 +163,20 @@ const styles = StyleSheet.create({
   submitBtnText: {color: '#fff', fontSize: 16, fontWeight: '700'},
   listItem: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1A1A1A', paddingHorizontal: 16, paddingVertical: 14, borderRadius: 10, marginBottom: 6},
   listItemLeft: {flex: 1},
+  nameRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
   listItemName: {color: '#fff', fontSize: 16, fontWeight: '600'},
+  roleBadge: {paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6},
+  roleBadgeOwner: {backgroundColor: '#FF4D4D20'},
+  roleBadgeManager: {backgroundColor: '#FF980020'},
+  roleBadgeMember: {backgroundColor: '#33333380'},
+  roleBadgeText: {fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5},
+  roleBadgeTextOwner: {color: '#FF4D4D'},
+  roleBadgeTextManager: {color: '#FF9800'},
+  roleBadgeTextMember: {color: '#888'},
   listItemSub: {color: '#666', fontSize: 13, marginTop: 2},
-  listItemActions: {flexDirection: 'row', gap: 16},
+  listItemActions: {flexDirection: 'row', gap: 16, alignItems: 'center'},
   actionText: {color: '#888', fontSize: 14, fontWeight: '600'},
+  actionTextRole: {color: '#FF9800', fontSize: 18, fontWeight: '800'},
   actionDanger: {color: '#F44336'},
   addReasonRow: {flexDirection: 'row', gap: 8, marginBottom: 12},
   addReasonBtn: {backgroundColor: '#FF4D4D', width: 48, borderRadius: 8, alignItems: 'center', justifyContent: 'center'},

@@ -11,7 +11,7 @@ import {
 import Sound from 'react-native-sound';
 import {User, Buzz, BuzzResponse} from '../types';
 import {useReasons} from '../hooks/useReasons';
-import {createBuzz, subscribeToBuzz, markEscalated} from '../services/firebase';
+import {createBuzz, subscribeToBuzz, markEscalated, respondToBuzz} from '../services/firebase';
 import {
   MAX_NOTE_LENGTH,
   REBUZZ_TIMEOUT_MS,
@@ -30,12 +30,16 @@ const RESPONSE_LABELS: Record<BuzzResponse, string> = {
   ack: 'Acknowledged — coming',
   five_min: 'Will be there in 5 min',
   busy: 'Busy right now',
+  cancelled: 'Buzz cancelled',
+  dismissed: 'Buzz dismissed',
   none: 'No response',
 };
 
 const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
   const reasons = useReasons();
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
+  const [isOther, setIsOther] = useState(false);
+  const [customReason, setCustomReason] = useState('');
   const [note, setNote] = useState('');
   const [buzzState, setBuzzState] = useState<BuzzState>('select');
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -47,12 +51,13 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
   const rebuzzSentRef = useRef(false);
 
   const sendBuzz = async () => {
-    if (!selectedReason) return;
+    const reason = isOther ? customReason.trim() : selectedReason;
+    if (!reason) return;
 
     const buzzData: Omit<Buzz, 'id'> = {
       from_user_id: sender.id,
       to_user_id: receiver.id,
-      reason: selectedReason,
+      reason,
       note: note.trim() || null,
       created_at: Date.now(),
       responded_at: null,
@@ -83,8 +88,18 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
         setResponse(buzz.response);
         setBuzzState('responded');
         if (timerRef.current) clearInterval(timerRef.current);
+        setTimeout(() => onClose(), 3000);
       }
     });
+  };
+
+  const handleCancelBuzz = async () => {
+    if (buzzIdRef.current) {
+      await respondToBuzz(buzzIdRef.current, 'cancelled');
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (unsubRef.current) unsubRef.current();
+    onClose();
   };
 
   useEffect(() => {
@@ -129,13 +144,31 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
         <Text style={styles.label}>Select reason</Text>
         <View style={styles.chipsContainer}>
           {reasons.map(r => (
-            <TouchableOpacity key={r.id} style={[styles.chip, selectedReason === r.label && styles.chipSelected]} onPress={() => setSelectedReason(r.label)}>
-              <Text style={[styles.chipText, selectedReason === r.label && styles.chipTextSelected]}>{r.label}</Text>
+            <TouchableOpacity key={r.id} style={[styles.chip, !isOther && selectedReason === r.label && styles.chipSelected]} onPress={() => { setSelectedReason(r.label); setIsOther(false); }}>
+              <Text style={[styles.chipText, !isOther && selectedReason === r.label && styles.chipTextSelected]}>{r.label}</Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity style={[styles.chip, isOther && styles.chipSelected]} onPress={() => { setIsOther(true); setSelectedReason(null); }}>
+            <Text style={[styles.chipText, isOther && styles.chipTextSelected]}>Other</Text>
+          </TouchableOpacity>
         </View>
+        {isOther && (
+          <TextInput
+            style={styles.noteInput}
+            placeholder="Enter custom reason"
+            placeholderTextColor="#666"
+            value={customReason}
+            onChangeText={setCustomReason}
+            maxLength={50}
+            autoFocus
+          />
+        )}
         <TextInput style={styles.noteInput} placeholder="Optional note (40 chars)" placeholderTextColor="#666" value={note} onChangeText={setNote} maxLength={MAX_NOTE_LENGTH} />
-        <TouchableOpacity style={[styles.buzzButton, !selectedReason && styles.buzzButtonDisabled]} onPress={sendBuzz} disabled={!selectedReason} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={[styles.buzzButton, !(isOther ? customReason.trim() : selectedReason) && styles.buzzButtonDisabled]}
+          onPress={sendBuzz}
+          disabled={!(isOther ? customReason.trim() : selectedReason)}
+          activeOpacity={0.8}>
           <Text style={styles.buzzButtonText}>BUZZ</Text>
         </TouchableOpacity>
       </View>
@@ -146,7 +179,7 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose}><Text style={styles.closeBtn}>✕</Text></TouchableOpacity>
+          <TouchableOpacity onPress={handleCancelBuzz}><Text style={styles.closeBtn}>✕</Text></TouchableOpacity>
           <Text style={styles.headerTitle}>Buzzing {receiver.name}</Text>
           <View style={{width: 32}} />
         </View>
@@ -165,7 +198,9 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
       <View style={styles.container}>
         <View style={styles.header}><View style={{width: 32}} /><Text style={styles.headerTitle}>{receiver.name}</Text><View style={{width: 32}} /></View>
         <View style={styles.statusContainer}>
-          <Text style={styles.responseIcon}>{response === 'ack' ? '✓' : response === 'five_min' ? '⏱' : '✗'}</Text>
+          <Text style={[styles.responseIcon, {color: response === 'ack' ? '#4CAF50' : response === 'five_min' ? '#FF9800' : response === 'dismissed' ? '#9C27B0' : '#F44336'}]}>
+            {response === 'ack' ? '✓' : response === 'five_min' ? '⏱' : response === 'dismissed' ? '👀' : '✗'}
+          </Text>
           <Text style={styles.responseText}>{RESPONSE_LABELS[response]}</Text>
           <Text style={styles.elapsedText}>{formatTime(elapsedMs)}</Text>
         </View>
@@ -210,7 +245,7 @@ const styles = StyleSheet.create({
   waitingText: {color: '#ccc', fontSize: 18, marginBottom: 8},
   elapsedText: {color: '#666', fontSize: 16},
   rebuzzText: {color: '#FF9800', fontSize: 14, marginTop: 12},
-  responseIcon: {fontSize: 48, color: '#4CAF50', marginBottom: 16},
+  responseIcon: {fontSize: 48, marginBottom: 16},
   responseText: {color: '#fff', fontSize: 20, fontWeight: '600', marginBottom: 8, textAlign: 'center'},
   noResponseIcon: {fontSize: 48, color: '#FF9800', fontWeight: '900', marginBottom: 16},
   noResponseText: {color: '#FF9800', fontSize: 22, fontWeight: '700', marginBottom: 8},

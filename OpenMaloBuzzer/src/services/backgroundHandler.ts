@@ -1,4 +1,8 @@
-import notifee, {EventType} from '@notifee/react-native';
+import notifee, {
+  EventType,
+  AndroidImportance,
+  AndroidVisibility,
+} from '@notifee/react-native';
 
 export const setupBackgroundHandler = () => {
   // Handle notification actions in background
@@ -15,4 +19,70 @@ export const setupBackgroundHandler = () => {
       }
     }
   });
+
+  // Handle FCM background/killed messages
+  try {
+    const {getMessaging, setBackgroundMessageHandler} =
+      require('@react-native-firebase/messaging');
+    const messaging = getMessaging();
+    setBackgroundMessageHandler(messaging, async (remoteMessage: any) => {
+      const data = remoteMessage.data;
+      if (!data) return;
+
+      if (data.type === 'buzz') {
+        await notifee.createChannel({
+          id: 'openmalo_buzz',
+          name: 'OpenMalo Buzz',
+          importance: AndroidImportance.HIGH,
+          visibility: AndroidVisibility.PUBLIC,
+          sound: 'buzz_alarm',
+          vibration: true,
+          vibrationPattern: [0, 500, 200, 500, 200, 500],
+          bypassDnd: true,
+        });
+
+        await notifee.displayNotification({
+          id: data.buzz_id,
+          title: `Buzz from ${data.from_user_name}`,
+          body: data.reason + (data.note ? ` — ${data.note}` : ''),
+          android: {
+            channelId: 'openmalo_buzz',
+            importance: AndroidImportance.HIGH,
+            sound: 'buzz_alarm',
+            vibrationPattern: [0, 500, 200, 500, 200, 500],
+            fullScreenAction: {
+              id: 'incoming-buzz',
+              launchActivity: 'default',
+            },
+            pressAction: {id: 'default'},
+            actions: [
+              {title: 'Ack', pressAction: {id: 'ack'}},
+              {title: '5 min', pressAction: {id: 'five_min'}},
+              {title: 'Busy', pressAction: {id: 'busy'}},
+            ],
+            category: 'buzz' as any,
+            loopSound: true,
+            ongoing: true,
+            autoCancel: false,
+          },
+          data: data as any,
+        });
+      }
+
+      if (data.type === 'buzz_cancelled') {
+        await notifee.cancelNotification(data.buzz_id);
+        await notifee.displayNotification({
+          title: 'Buzz cancelled',
+          body: `${data.from_user_name || 'Sender'} cancelled the buzz`,
+          android: {
+            channelId: 'openmalo_buzz',
+            importance: AndroidImportance.DEFAULT,
+            autoCancel: true,
+            timeoutAfter: 10000,
+            pressAction: {id: 'default'},
+          },
+        });
+      }
+    });
+  } catch {}
 };

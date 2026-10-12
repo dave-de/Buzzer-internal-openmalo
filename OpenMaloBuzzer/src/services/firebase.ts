@@ -5,6 +5,7 @@ import {
   where,
   orderBy,
   limit as firestoreLimit,
+  startAfter,
   getDocs,
   doc,
   addDoc,
@@ -27,12 +28,12 @@ export const getUserByPhone = async (phone: string): Promise<User | null> => {
     query(
       collection(db, COLLECTIONS.USERS),
       where('phone', '==', phone),
+      where('is_active', '==', true),
       firestoreLimit(1),
     ),
   );
   if (snap.empty) return null;
-  const user = {id: snap.docs[0].id, ...snap.docs[0].data()} as User;
-  return user.is_active ? user : null;
+  return {id: snap.docs[0].id, ...snap.docs[0].data()} as User;
 };
 
 export const updateFcmToken = (userId: string, token: string) =>
@@ -49,6 +50,12 @@ export const removeUser = (userId: string) =>
 
 export const resetUserPin = (userId: string, pinHash: string) =>
   updateDoc(doc(db, COLLECTIONS.USERS, userId), {pin_hash: pinHash});
+
+export const updateUserProfile = (userId: string, data: {name?: string; phone?: string}) =>
+  updateDoc(doc(db, COLLECTIONS.USERS, userId), data);
+
+export const updateUserRole = (userId: string, role: string) =>
+  updateDoc(doc(db, COLLECTIONS.USERS, userId), {role});
 
 export const subscribeToUsers = (callback: (users: User[]) => void) =>
   onSnapshot(
@@ -104,6 +111,28 @@ export const getBuzzLog = (days = 7) => {
   ).then(snap => snap.docs.map(d => ({id: d.id, ...d.data()} as Buzz)));
 };
 
+const PAGE_SIZE = 15;
+
+export const getBuzzLogPage = async (lastDoc?: any) => {
+  const since = Date.now() - 30 * 24 * 60 * 60 * 1000; // 30 days
+  const constraints: any[] = [
+    where('created_at', '>=', since),
+    orderBy('created_at', 'desc'),
+    firestoreLimit(PAGE_SIZE),
+  ];
+  if (lastDoc) {
+    constraints.push(startAfter(lastDoc));
+  }
+  const snap = await getDocs(
+    query(collection(db, COLLECTIONS.BUZZES), ...constraints),
+  );
+  return {
+    buzzes: snap.docs.map(d => ({id: d.id, ...d.data()} as Buzz)),
+    lastDoc: snap.docs[snap.docs.length - 1] || null,
+    hasMore: snap.docs.length === PAGE_SIZE,
+  };
+};
+
 // ─── Reasons ─────────────────────────────────────────────
 export const getReasons = () =>
   getDocs(
@@ -142,6 +171,7 @@ export const removeReason = (reasonId: string) =>
 export const subscribeToIncomingBuzzes = (
   userId: string,
   callback: (buzz: Buzz) => void,
+  onCancelled?: (buzzId: string) => void,
 ) => {
   const seenIds = new Set<string>();
   return onSnapshot(
@@ -152,6 +182,19 @@ export const subscribeToIncomingBuzzes = (
     ),
     snap => {
       if (!snap) return;
+      const currentIds = new Set(snap.docs.map(d => d.id));
+      // Detect removed buzzes (cancelled by sender)
+      if (onCancelled) {
+        seenIds.forEach(id => {
+          if (!currentIds.has(id)) {
+            onCancelled(id);
+          }
+        });
+      }
+      // Remove stale IDs
+      seenIds.forEach(id => {
+        if (!currentIds.has(id)) seenIds.delete(id);
+      });
       snap.docs.forEach(d => {
         if (!seenIds.has(d.id)) {
           seenIds.add(d.id);
