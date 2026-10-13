@@ -3,6 +3,7 @@ import notifee, {
   AndroidImportance,
   AndroidVisibility,
 } from '@notifee/react-native';
+import {NOTIFICATION_CHANNEL_ID, NOTIFICATION_CHANNEL_NAME} from '../constants';
 
 export const setupBackgroundHandler = () => {
   // Handle notification actions in background
@@ -14,7 +15,9 @@ export const setupBackgroundHandler = () => {
         try {
           const {respondToBuzz} = require('./firebase');
           await respondToBuzz(buzzId, actionId as any);
-        } catch {}
+        } catch (err) {
+          console.warn('Background respond error:', err);
+        }
         await notifee.cancelNotification(buzzId);
       }
     }
@@ -31,8 +34,8 @@ export const setupBackgroundHandler = () => {
 
       if (data.type === 'buzz') {
         await notifee.createChannel({
-          id: 'openmalo_buzz',
-          name: 'OpenMalo Buzz',
+          id: NOTIFICATION_CHANNEL_ID,
+          name: NOTIFICATION_CHANNEL_NAME,
           importance: AndroidImportance.HIGH,
           visibility: AndroidVisibility.PUBLIC,
           sound: 'buzz_alarm',
@@ -46,7 +49,7 @@ export const setupBackgroundHandler = () => {
           title: `Buzz from ${data.from_user_name}`,
           body: data.reason + (data.note ? ` — ${data.note}` : ''),
           android: {
-            channelId: 'openmalo_buzz',
+            channelId: NOTIFICATION_CHANNEL_ID,
             importance: AndroidImportance.HIGH,
             sound: 'buzz_alarm',
             vibrationPattern: [0, 500, 200, 500, 200, 500],
@@ -75,7 +78,7 @@ export const setupBackgroundHandler = () => {
           title: 'Buzz cancelled',
           body: `${data.from_user_name || 'Sender'} cancelled the buzz`,
           android: {
-            channelId: 'openmalo_buzz',
+            channelId: NOTIFICATION_CHANNEL_ID,
             importance: AndroidImportance.DEFAULT,
             autoCancel: true,
             timeoutAfter: 10000,
@@ -84,5 +87,7 @@ export const setupBackgroundHandler = () => {
         });
       }
     });
-  } catch {}
+  } catch (err) {
+    console.warn('FCM background handler setup error:', err);
+  }
 };

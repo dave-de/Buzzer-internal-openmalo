@@ -5,7 +5,7 @@ import {useAuth} from './src/hooks/useAuth';
 import {createNotificationChannel, setupNotificationListeners, showBuzzNotification, cancelBuzzNotification} from './src/services/notification';
 import {respondToBuzz, subscribeToIncomingBuzzes, subscribeToUsers, requestFcmPermission} from './src/services/firebase';
 import {promptBatteryOptimization} from './src/services/batteryOptimization';
-import {BuzzPayload, User} from './src/types';
+import {BuzzPayload, User, Group} from './src/types';
 
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
@@ -15,45 +15,43 @@ import IncomingBuzzScreen from './src/screens/IncomingBuzzScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
+import GroupsScreen from './src/screens/GroupsScreen';
+import GroupBuzzSheet from './src/screens/GroupBuzzSheet';
+import VoiceCallScreen from './src/screens/VoiceCallScreen';
+import VoiceMailScreen from './src/screens/VoiceMailScreen';
 
 const {BuzzerService} = NativeModules;
 
-type Screen = 'home' | 'buzz' | 'incoming' | 'settings' | 'profile' | 'history';
+type Screen = 'home' | 'buzz' | 'incoming' | 'settings' | 'profile' | 'history' | 'groups' | 'group-buzz' | 'voice-call' | 'voice-mail';
 
 function App() {
   const {user, loading, login, signUp, deleteAccount, updateProfile, changePin, logout} = useAuth();
   const [screen, setScreen] = useState<Screen>('home');
   const [authScreen, setAuthScreen] = useState<'login' | 'signup'>('login');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [incomingPayload, setIncomingPayload] = useState<BuzzPayload | null>(null);
   const usersMapRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const requestPermissions = async () => {
-      // Android 13+ requires POST_NOTIFICATIONS permission
       if (Platform.OS === 'android' && Platform.Version >= 33) {
         await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
         );
       }
-      // Request FCM permission (iOS prompt + Android channel setup)
       await requestFcmPermission();
-      // Create notification channel for buzz alerts
       await createNotificationChannel();
     };
     requestPermissions().catch(() => {});
     promptBatteryOptimization();
   }, []);
 
-  // Start/stop foreground service based on login state
   useEffect(() => {
     if (user) {
       BuzzerService?.startService(user.id);
-      // Restart service when app comes to foreground to refresh Firestore listener
       const sub = AppState.addEventListener('change', (state) => {
-        if (state === 'active') {
-          BuzzerService?.startService(user.id);
-        }
+        if (state === 'active') BuzzerService?.startService(user.id);
       });
       return () => sub.remove();
     } else {
@@ -61,7 +59,6 @@ function App() {
     }
   }, [user]);
 
-  // Cache user names for buzz notifications (real-time)
   useEffect(() => {
     if (!user) return;
     const unsub = subscribeToUsers(users => {
@@ -72,7 +69,6 @@ function App() {
     return unsub;
   }, [user]);
 
-  // Listen for incoming buzzes via Firestore (foreground)
   useEffect(() => {
     if (!user) return;
     const unsubscribe = subscribeToIncomingBuzzes(
@@ -85,7 +81,6 @@ function App() {
           reason: buzz.reason,
           note: buzz.note,
         };
-
         if (AppState.currentState === 'active') {
           setIncomingPayload(payload);
           setScreen('incoming');
@@ -94,13 +89,13 @@ function App() {
         }
       },
       (buzzId) => {
-        // Sender cancelled the buzz
         cancelBuzzNotification(buzzId).catch(() => {});
         setIncomingPayload(prev => {
-          if (prev?.buzz_id === buzzId) {
-            setScreen('home');
-            return null;
-          }
+          if (prev?.buzz_id === buzzId) return null;
+          return prev;
+        });
+        setScreen(prev => {
+          if (prev === 'incoming') return 'home';
           return prev;
         });
       },
@@ -108,7 +103,6 @@ function App() {
     return unsubscribe;
   }, [user]);
 
-  // Handle FCM messages in foreground (cancellation, etc.)
   useEffect(() => {
     try {
       const {getMessaging, onMessage} = require('@react-native-firebase/messaging');
@@ -119,19 +113,21 @@ function App() {
         if (data.type === 'buzz_cancelled') {
           cancelBuzzNotification(data.buzz_id).catch(() => {});
           setIncomingPayload(prev => {
-            if (prev?.buzz_id === data.buzz_id) {
-              setScreen('home');
-              return null;
-            }
+            if (prev?.buzz_id === data.buzz_id) return null;
+            return prev;
+          });
+          setScreen(prev => {
+            if (prev === 'incoming') return 'home';
             return prev;
           });
         }
       });
       return unsub;
-    } catch {}
+    } catch (err) {
+      console.warn('FCM foreground handler setup error:', err);
+    }
   }, []);
 
-  // Handle notification actions
   useEffect(() => {
     const unsubscribe = setupNotificationListeners(
       (buzzId, response) => { respondToBuzz(buzzId, response as any).catch(() => {}); },
@@ -140,30 +136,25 @@ function App() {
     return unsubscribe;
   }, []);
 
-  // Check for pending buzz from native notification tap
   useEffect(() => {
     if (!user) return;
-
     const checkPendingBuzz = () => {
       BuzzerService?.getPendingBuzz?.()
         .then((data: any) => {
           if (data?.buzz_id) {
-            const payload: BuzzPayload = {
+            setIncomingPayload({
               buzz_id: data.buzz_id,
               from_user_id: data.from_user_id,
               from_user_name: data.from_user_name || 'Someone',
               reason: data.reason,
               note: data.note || null,
-            };
-            setIncomingPayload(payload);
+            });
             setScreen('incoming');
           }
         })
         .catch(() => {});
     };
-
     checkPendingBuzz();
-
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') checkPendingBuzz();
     });
@@ -174,6 +165,7 @@ function App() {
     BuzzerService?.stopService();
     setScreen('home');
     setSelectedUser(null);
+    setSelectedGroup(null);
     setIncomingPayload(null);
     setAuthScreen('login');
     await logout();
@@ -183,6 +175,7 @@ function App() {
     BuzzerService?.stopService();
     setScreen('home');
     setSelectedUser(null);
+    setSelectedGroup(null);
     setIncomingPayload(null);
     setAuthScreen('login');
     await deleteAccount();
@@ -191,6 +184,10 @@ function App() {
   const handleSelectUser = useCallback((u: User) => { setSelectedUser(u); setScreen('buzz'); }, []);
   const handleCloseBuzz = useCallback(() => { setSelectedUser(null); setScreen('home'); }, []);
   const handleDismissIncoming = useCallback(() => { setIncomingPayload(null); setScreen('home'); }, []);
+  const handleCallUser = useCallback((u: User) => { setSelectedUser(u); setScreen('voice-call'); }, []);
+  const handleVoiceMail = useCallback((u?: User) => { setSelectedUser(u || null); setScreen('voice-mail'); }, []);
+  const handleBuzzGroup = useCallback((g: Group) => { setSelectedGroup(g); setScreen('group-buzz'); }, []);
+  const handleCloseGroup = useCallback(() => { setSelectedGroup(null); setScreen('home'); }, []);
 
   return (
     <SafeAreaProvider>
@@ -208,8 +205,24 @@ function App() {
       ) : (
         <>
           {screen === 'incoming' && incomingPayload && <IncomingBuzzScreen payload={incomingPayload} onDismiss={handleDismissIncoming} />}
-          {screen === 'home' && <HomeScreen currentUser={user} onSelectUser={handleSelectUser} onSettings={() => setScreen('settings')} onProfile={() => setScreen('profile')} onHistory={() => setScreen('history')} />}
+          {screen === 'home' && (
+            <HomeScreen
+              currentUser={user}
+              onSelectUser={handleSelectUser}
+              onCallUser={handleCallUser}
+              onVoiceMail={handleVoiceMail}
+              onSettings={() => setScreen('settings')}
+              onProfile={() => setScreen('profile')}
+              onHistory={() => setScreen('history')}
+              onGroups={() => setScreen('groups')}
+              onBuzzGroup={handleBuzzGroup}
+            />
+          )}
           {screen === 'buzz' && selectedUser && <BuzzSheet sender={user} receiver={selectedUser} onClose={handleCloseBuzz} />}
+          {screen === 'groups' && <GroupsScreen currentUser={user} onBack={() => setScreen('home')} onBuzzGroup={handleBuzzGroup} />}
+          {screen === 'group-buzz' && selectedGroup && <GroupBuzzSheet sender={user} group={selectedGroup} onClose={handleCloseGroup} />}
+          {screen === 'voice-call' && selectedUser && <VoiceCallScreen caller={user} receiver={selectedUser} onClose={() => { setSelectedUser(null); setScreen('home'); }} />}
+          {screen === 'voice-mail' && <VoiceMailScreen currentUser={user} targetUser={selectedUser || undefined} onBack={() => { setSelectedUser(null); setScreen('home'); }} />}
           {screen === 'settings' && <SettingsScreen currentUser={user} onBack={() => setScreen('home')} />}
           {screen === 'profile' && <ProfileScreen currentUser={user} onBack={() => setScreen('home')} onLogout={handleLogout} onDeleteAccount={handleDeleteAccount} onUpdateProfile={updateProfile} onChangePin={changePin} />}
           {screen === 'history' && <HistoryScreen onBack={() => setScreen('home')} />}

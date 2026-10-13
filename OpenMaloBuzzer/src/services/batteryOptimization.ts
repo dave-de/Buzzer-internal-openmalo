@@ -1,4 +1,4 @@
-import {Alert, Linking, Platform, NativeModules} from 'react-native';
+import {Alert, Linking, Platform} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const BATTERY_PROMPT_KEY = '@openmalo_battery_prompted';
@@ -9,8 +9,7 @@ export const promptBatteryOptimization = async () => {
   // Always try to request ignore battery optimizations
   try {
     await Linking.sendIntent(
-      'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
-      [{key: 'package', value: 'package:com.openmalobuzzer'}],
+      'android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS',
     );
   } catch {
     // If direct intent fails, show manual prompt

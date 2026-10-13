@@ -1,29 +1,30 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {User} from '../types';
 import {getUserByPhone, addUser, removeUser, updateFcmToken, updateUserProfile, resetUserPin} from './firebase';
+import {hashPin, verifyPin} from './crypto';
 
 const AUTH_KEY = '@openmalo_user';
 
-export const hashPin = (pin: string): string => {
-  let hash = 0;
-  const str = `openmalo_${pin}_salt`;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return hash.toString(36);
+/** Store user in AsyncStorage without sensitive fields. */
+const storeUser = async (user: User) => {
+  const {pin_hash: _, ...safeUser} = user;
+  await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(safeUser));
 };
 
 export const login = async (phone: string, pin: string): Promise<User | null> => {
   const user = await getUserByPhone(phone);
   if (!user) throw new Error('No account found with this phone number');
-  if (user.pin_hash !== hashPin(pin)) throw new Error('Incorrect PIN');
+  if (!verifyPin(pin, user.pin_hash)) throw new Error('Incorrect PIN');
 
-  await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(user));
-  console.log('Login: saved to storage');
+  // Migrate legacy DJB2 hash to SHA-256
+  if (!user.pin_hash.startsWith('v2:')) {
+    const newHash = hashPin(pin);
+    await resetUserPin(user.id, newHash);
+  }
 
-  // FCM token update - completely optional, don't block login
+  await storeUser(user);
+
+  // FCM token update — don't block login
   setTimeout(async () => {
     try {
       const {getMessaging, getToken} = require('@react-native-firebase/messaging');
@@ -50,14 +51,13 @@ export const signup = async (
     phone,
     pin_hash: hashPin(pin),
     role,
-    fcm_token: '',
     last_seen_at: Date.now(),
     is_active: true,
   };
 
   const docRef = await addUser(userData);
   const user: User = {id: docRef.id, ...userData};
-  await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(user));
+  await storeUser(user);
 
   setTimeout(async () => {
     try {
@@ -78,15 +78,14 @@ export const deleteAccount = async (userId: string): Promise<void> => {
 
 export const getStoredUser = async (): Promise<User | null> => {
   const data = await AsyncStorage.getItem(AUTH_KEY);
-  return data ? JSON.parse(data) : null;
+  if (!data) return null;
+  const parsed = JSON.parse(data);
+  // pin_hash is not stored locally; default to empty
+  return {...parsed, pin_hash: parsed.pin_hash || ''};
 };
 
 export const logout = async () => {
   await AsyncStorage.removeItem(AUTH_KEY);
-};
-
-export const updateStoredUser = async (user: User) => {
-  await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(user));
 };
 
 export const updateProfile = async (
@@ -99,7 +98,7 @@ export const updateProfile = async (
   }
   await updateUserProfile(user.id, data);
   const updated = {...user, ...data};
-  await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+  await storeUser(updated);
   return updated;
 };
 
@@ -108,11 +107,12 @@ export const changePin = async (
   currentPin: string,
   newPin: string,
 ): Promise<void> => {
-  if (user.pin_hash !== hashPin(currentPin)) {
+  // Fetch current pin_hash from Firestore (not stored locally)
+  const freshUser = await getUserByPhone(user.phone);
+  if (!freshUser) throw new Error('User not found');
+  if (!verifyPin(currentPin, freshUser.pin_hash)) {
     throw new Error('Current PIN is incorrect');
   }
   const newHash = hashPin(newPin);
   await resetUserPin(user.id, newHash);
-  const updated = {...user, pin_hash: newHash};
-  await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(updated));
 };

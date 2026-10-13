@@ -60,7 +60,6 @@ export const useAuth = () => {
   const changePin = useCallback(async (currentPin: string, newPin: string) => {
     if (!user) return;
     await authChangePin(user, currentPin, newPin);
-    setUser(prev => prev ? {...prev, pin_hash: ''} : null);
   }, [user]);
 
   const logout = useCallback(async () => {

@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import {User} from '../types';
 
 const BASE_WIDTH = 375;
@@ -159,7 +160,7 @@ const SignupScreen: React.FC<Props> = ({onSignup, onGoToLogin}) => {
         placeholderTextColor="#999"
         keyboardType="phone-pad"
         value={phone}
-        onChangeText={setPhone}
+        onChangeText={t => setPhone(t.replace(/[^0-9]/g, ''))}
         maxLength={15}
         returnKeyType="next"
         onSubmitEditing={() => pinRef.current?.focus()}
@@ -259,7 +260,7 @@ const SignupScreen: React.FC<Props> = ({onSignup, onGoToLogin}) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <View style={styles.modalIconWrap}>
-              <Text style={styles.modalIcon}>!</Text>
+              <Icon name="error-outline" size={32} color="#FF4D4D" />
             </View>
             <Text style={styles.modalTitle}>{alertModal.title}</Text>
             <Text style={styles.modalMessage}>{alertModal.message}</Text>

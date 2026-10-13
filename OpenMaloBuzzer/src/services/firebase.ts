@@ -10,10 +10,11 @@ import {
   doc,
   addDoc,
   updateDoc,
+  setDoc,
   onSnapshot,
 } from '@react-native-firebase/firestore';
 import {COLLECTIONS} from '../constants';
-import {User, Buzz, Reason, BuzzResponse} from '../types';
+import {User, Buzz, Reason, BuzzResponse, Group, CallLog, VoiceMail} from '../types';
 
 const db = getFirestore();
 
@@ -37,7 +38,7 @@ export const getUserByPhone = async (phone: string): Promise<User | null> => {
 };
 
 export const updateFcmToken = (userId: string, token: string) =>
-  updateDoc(doc(db, COLLECTIONS.USERS, userId), {fcm_token: token});
+  setDoc(doc(db, COLLECTIONS.USER_TOKENS, userId), {fcm_token: token});
 
 export const updateLastSeen = (userId: string) =>
   updateDoc(doc(db, COLLECTIONS.USERS, userId), {last_seen_at: Date.now()});
@@ -100,17 +101,6 @@ export const getRecentBuzzes = (userId: string, count = 20) =>
     ),
   ).then(snap => snap.docs.map(d => ({id: d.id, ...d.data()} as Buzz)));
 
-export const getBuzzLog = (days = 7) => {
-  const since = Date.now() - days * 24 * 60 * 60 * 1000;
-  return getDocs(
-    query(
-      collection(db, COLLECTIONS.BUZZES),
-      where('created_at', '>=', since),
-      orderBy('created_at', 'desc'),
-    ),
-  ).then(snap => snap.docs.map(d => ({id: d.id, ...d.data()} as Buzz)));
-};
-
 const PAGE_SIZE = 15;
 
 export const getBuzzLogPage = async (lastDoc?: any) => {
@@ -171,9 +161,9 @@ export const removeReason = (reasonId: string) =>
 export const subscribeToIncomingBuzzes = (
   userId: string,
   callback: (buzz: Buzz) => void,
-  onCancelled?: (buzzId: string) => void,
+  onRemoved?: (buzzId: string) => void,
 ) => {
-  const seenIds = new Set<string>();
+  let isFirstSnapshot = true;
   return onSnapshot(
     query(
       collection(db, COLLECTIONS.BUZZES),
@@ -182,33 +172,106 @@ export const subscribeToIncomingBuzzes = (
     ),
     snap => {
       if (!snap) return;
-      const currentIds = new Set(snap.docs.map(d => d.id));
-      // Detect removed buzzes (cancelled by sender)
-      if (onCancelled) {
-        seenIds.forEach(id => {
-          if (!currentIds.has(id)) {
-            onCancelled(id);
-          }
-        });
-      }
-      // Remove stale IDs
-      seenIds.forEach(id => {
-        if (!currentIds.has(id)) seenIds.delete(id);
-      });
-      snap.docs.forEach(d => {
-        if (!seenIds.has(d.id)) {
-          seenIds.add(d.id);
-          const buzz = {id: d.id, ...d.data()} as Buzz;
+      snap.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const buzz = {id: change.doc.id, ...change.doc.data()} as Buzz;
           // Only alert for buzzes created in the last 2 minutes
           if (Date.now() - buzz.created_at < 120000) {
             callback(buzz);
           }
         }
+        if (change.type === 'removed' && !isFirstSnapshot && onRemoved) {
+          onRemoved(change.doc.id);
+        }
       });
+      isFirstSnapshot = false;
     },
     err => console.warn('subscribeToIncomingBuzzes error:', err),
   );
 };
+
+// ─── Groups ─────────────────────────────────────────────
+export const subscribeToGroups = (callback: (groups: Group[]) => void) =>
+  onSnapshot(
+    query(collection(db, COLLECTIONS.GROUPS), where('is_active', '==', true)),
+    snap => {
+      if (!snap) return;
+      callback(snap.docs.map(d => ({id: d.id, ...d.data()} as Group)));
+    },
+    err => console.warn('subscribeToGroups error:', err),
+  );
+
+export const createGroup = (group: Omit<Group, 'id'>) =>
+  addDoc(collection(db, COLLECTIONS.GROUPS), group);
+
+export const updateGroup = (groupId: string, data: {name?: string; member_ids?: string[]}) =>
+  updateDoc(doc(db, COLLECTIONS.GROUPS, groupId), data);
+
+export const deleteGroup = (groupId: string) =>
+  updateDoc(doc(db, COLLECTIONS.GROUPS, groupId), {is_active: false});
+
+export const createGroupBuzz = async (
+  senderId: string,
+  memberIds: string[],
+  reason: string,
+  note: string | null,
+) => {
+  const now = Date.now();
+  const promises = memberIds.map(memberId =>
+    addDoc(collection(db, COLLECTIONS.BUZZES), {
+      from_user_id: senderId,
+      to_user_id: memberId,
+      reason,
+      note,
+      created_at: now,
+      responded_at: null,
+      response: 'none',
+      escalated: false,
+    }),
+  );
+  return Promise.all(promises);
+};
+
+// ─── Call Logs ───────────────────────────────────────────
+export const addCallLog = (log: Omit<CallLog, 'id'>) =>
+  addDoc(collection(db, COLLECTIONS.CALL_LOGS), log);
+
+export const getCallLogs = (userId: string, count = 20) =>
+  getDocs(
+    query(
+      collection(db, COLLECTIONS.CALL_LOGS),
+      where('caller_id', '==', userId),
+      orderBy('started_at', 'desc'),
+      firestoreLimit(count),
+    ),
+  ).then(snap => snap.docs.map(d => ({id: d.id, ...d.data()} as CallLog)));
+
+// ─── Voice Mails ────────────────────────────────────────
+export const addVoiceMail = (mail: Omit<VoiceMail, 'id'>) =>
+  addDoc(collection(db, COLLECTIONS.VOICE_MAILS), mail);
+
+export const subscribeToVoiceMails = (
+  userId: string,
+  callback: (mails: VoiceMail[]) => void,
+) =>
+  onSnapshot(
+    query(
+      collection(db, COLLECTIONS.VOICE_MAILS),
+      where('to_user_id', '==', userId),
+      orderBy('created_at', 'desc'),
+    ),
+    snap => {
+      if (!snap) return;
+      callback(snap.docs.map(d => ({id: d.id, ...d.data()} as VoiceMail)));
+    },
+    err => console.warn('subscribeToVoiceMails error:', err),
+  );
+
+export const markVoiceMailListened = (mailId: string) =>
+  updateDoc(doc(db, COLLECTIONS.VOICE_MAILS, mailId), {listened: true});
+
+export const deleteVoiceMail = (mailId: string) =>
+  updateDoc(doc(db, COLLECTIONS.VOICE_MAILS, mailId), {deleted: true});
 
 // ─── FCM ─────────────────────────────────────────────────
 export const requestFcmPermission = async () => {

@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Modal,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import {User} from '../types';
 
 interface Props {
@@ -28,6 +30,7 @@ const ProfileScreen: React.FC<Props> = ({
   onUpdateProfile,
   onChangePin,
 }) => {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState(currentUser.name);
   const [phone, setPhone] = useState(currentUser.phone);
   const [saving, setSaving] = useState(false);
@@ -104,7 +107,7 @@ const ProfileScreen: React.FC<Props> = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, {paddingTop: insets.top + 12}]}>
         <TouchableOpacity onPress={onBack}>
           <Text style={styles.backBtn}>← Back</Text>
         </TouchableOpacity>
@@ -139,7 +142,7 @@ const ProfileScreen: React.FC<Props> = ({
           <TextInput
             style={styles.input}
             value={phone}
-            onChangeText={setPhone}
+            onChangeText={t => setPhone(t.replace(/[^0-9]/g, ''))}
             placeholder="Phone number"
             placeholderTextColor="#666"
             keyboardType="phone-pad"
@@ -232,7 +235,7 @@ const ProfileScreen: React.FC<Props> = ({
           </TouchableOpacity>
         </View>
 
-        <View style={{height: 48}} />
+        <View style={{height: insets.bottom + 24}} />
       </ScrollView>
 
       {/* Logout Modal */}
@@ -244,7 +247,7 @@ const ProfileScreen: React.FC<Props> = ({
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <View style={styles.modalIconWrap}>
-              <Text style={styles.modalIcon}>👋</Text>
+              <Icon name="logout" size={30} color="#FF4D4D" />
             </View>
             <Text style={styles.modalTitle}>Logout</Text>
             <Text style={styles.modalMessage}>
@@ -285,7 +288,7 @@ const ProfileScreen: React.FC<Props> = ({
                   : styles.modalIconDanger,
               ]}>
               <Text style={styles.modalIcon}>
-                {alertModal.type === 'success' ? '✓' : '!'}
+                <Icon name={alertModal.type === 'success' ? 'check-circle' : 'error-outline'} size={30} color={alertModal.type === 'success' ? '#4CAF50' : '#FF4D4D'} />
               </Text>
             </View>
             <Text style={styles.modalTitle}>{alertModal.title}</Text>
@@ -315,7 +318,7 @@ const ProfileScreen: React.FC<Props> = ({
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <View style={[styles.modalIconWrap, styles.modalIconDanger]}>
-              <Text style={styles.modalIcon}>🗑️</Text>
+              <Icon name="delete-forever" size={30} color="#F44336" />
             </View>
             <Text style={styles.modalTitle}>Delete Account</Text>
             <Text style={styles.modalMessage}>
@@ -351,7 +354,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 56,
     paddingBottom: 12,
   },
   backBtn: {color: '#FF4D4D', fontSize: 16, fontWeight: '600'},

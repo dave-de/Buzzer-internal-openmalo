@@ -1,5 +1,7 @@
 import React, {useEffect, useRef} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, Vibration, NativeModules} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import Sound from 'react-native-sound';
 import {BuzzPayload, BuzzResponse, Buzz} from '../types';
 import {respondToBuzz, subscribeToBuzz} from '../services/firebase';
@@ -13,6 +15,7 @@ interface Props {
 }
 
 const IncomingBuzzScreen: React.FC<Props> = ({payload, onDismiss}) => {
+  const insets = useSafeAreaInsets();
   const soundRef = useRef<Sound | null>(null);
 
   // Listen for cancellation by sender
@@ -82,8 +85,8 @@ const IncomingBuzzScreen: React.FC<Props> = ({payload, onDismiss}) => {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.closeBtn} onPress={handleDismiss}>
-        <Text style={styles.closeBtnText}>✕</Text>
+      <TouchableOpacity style={[styles.closeBtn, {top: insets.top + 8}]} onPress={handleDismiss}>
+        <Icon name="close" size={22} color="#999" />
       </TouchableOpacity>
       <View style={styles.content}>
         <View style={styles.avatarLarge}>
@@ -97,7 +100,7 @@ const IncomingBuzzScreen: React.FC<Props> = ({payload, onDismiss}) => {
         {payload.note && <Text style={styles.note}>{payload.note}</Text>}
       </View>
 
-      <View style={styles.buttons}>
+      <View style={[styles.buttons, {paddingBottom: insets.bottom + 20}]}>
         <TouchableOpacity
           style={[styles.responseBtn, styles.ackBtn]}
           onPress={() => handleResponse('ack')}
@@ -134,7 +137,7 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     position: 'absolute',
-    top: 52,
+    top: 0,
     right: 20,
     zIndex: 10,
     width: 40,
@@ -191,7 +194,7 @@ const styles = StyleSheet.create({
   },
   buttons: {
     paddingHorizontal: 20,
-    paddingBottom: 48,
+    paddingBottom: 20,
     gap: 12,
   },
   responseBtn: {

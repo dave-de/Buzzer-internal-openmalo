@@ -8,6 +8,8 @@ import {
   Linking,
   Vibration,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import Sound from 'react-native-sound';
 import {User, Buzz, BuzzResponse} from '../types';
 import {useReasons} from '../hooks/useReasons';
@@ -36,6 +38,7 @@ const RESPONSE_LABELS: Record<BuzzResponse, string> = {
 };
 
 const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
+  const insets = useSafeAreaInsets();
   const reasons = useReasons();
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [isOther, setIsOther] = useState(false);
@@ -49,6 +52,7 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
   const rebuzzSentRef = useRef(false);
+  const sentSoundRef = useRef<Sound | null>(null);
 
   const sendBuzz = async () => {
     const reason = isOther ? customReason.trim() : selectedReason;
@@ -70,12 +74,16 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
     setBuzzState('sent');
 
     // Play sent confirmation sound
-    const sound = new Sound('buzz_alarm.wav', Sound.MAIN_BUNDLE, (err) => {
+    const sentSound = new Sound('buzz_alarm.wav', Sound.MAIN_BUNDLE, (err) => {
       if (!err) {
-        sound.setVolume(0.5);
-        sound.play(() => sound.release());
+        sentSound.setVolume(0.5);
+        sentSound.play(() => {
+          sentSound.release();
+          if (sentSoundRef.current === sentSound) sentSoundRef.current = null;
+        });
       }
     });
+    sentSoundRef.current = sentSound;
     Vibration.vibrate(200);
 
     const start = Date.now();
@@ -121,6 +129,10 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (unsubRef.current) unsubRef.current();
+      if (sentSoundRef.current) {
+        sentSoundRef.current.stop();
+        sentSoundRef.current.release();
+      }
     };
   }, []);
 
@@ -135,9 +147,9 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
 
   if (buzzState === 'select') {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose}><Text style={styles.closeBtn}>✕</Text></TouchableOpacity>
+      <View style={[styles.container, {paddingBottom: insets.bottom}]}>
+        <View style={[styles.header, {paddingTop: insets.top + 12}]}>
+          <TouchableOpacity onPress={onClose}><Icon name="close" size={24} color="#888" /></TouchableOpacity>
           <Text style={styles.headerTitle}>Buzz {receiver.name}</Text>
           <View style={{width: 32}} />
         </View>
@@ -177,14 +189,14 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
 
   if (buzzState === 'sent') {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleCancelBuzz}><Text style={styles.closeBtn}>✕</Text></TouchableOpacity>
+      <View style={[styles.container, {paddingBottom: insets.bottom}]}>
+        <View style={[styles.header, {paddingTop: insets.top + 12}]}>
+          <TouchableOpacity onPress={handleCancelBuzz}><Icon name="close" size={24} color="#888" /></TouchableOpacity>
           <Text style={styles.headerTitle}>Buzzing {receiver.name}</Text>
           <View style={{width: 32}} />
         </View>
         <View style={styles.statusContainer}>
-          <View style={styles.pulseOuter}><View style={styles.pulseInner}><Text style={styles.pulseEmoji}>📳</Text></View></View>
+          <View style={styles.pulseOuter}><View style={styles.pulseInner}><Icon name="notifications-active" size={28} color="#fff" /></View></View>
           <Text style={styles.waitingText}>Waiting for response...</Text>
           <Text style={styles.elapsedText}>{formatTime(elapsedMs)}</Text>
           {rebuzzSentRef.current && <Text style={styles.rebuzzText}>Re-buzz sent (escalated)</Text>}
@@ -195,11 +207,11 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
 
   if (buzzState === 'responded' && response) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}><View style={{width: 32}} /><Text style={styles.headerTitle}>{receiver.name}</Text><View style={{width: 32}} /></View>
+      <View style={[styles.container, {paddingBottom: insets.bottom}]}>
+        <View style={[styles.header, {paddingTop: insets.top + 12}]}><View style={{width: 32}} /><Text style={styles.headerTitle}>{receiver.name}</Text><View style={{width: 32}} /></View>
         <View style={styles.statusContainer}>
           <Text style={[styles.responseIcon, {color: response === 'ack' ? '#4CAF50' : response === 'five_min' ? '#FF9800' : response === 'dismissed' ? '#9C27B0' : '#F44336'}]}>
-            {response === 'ack' ? '✓' : response === 'five_min' ? '⏱' : response === 'dismissed' ? '👀' : '✗'}
+            <Icon name={response === 'ack' ? 'check-circle' : response === 'five_min' ? 'timer' : response === 'dismissed' ? 'visibility' : 'cancel'} size={48} color={response === 'ack' ? '#4CAF50' : response === 'five_min' ? '#FF9800' : response === 'dismissed' ? '#9C27B0' : '#F44336'} />
           </Text>
           <Text style={styles.responseText}>{RESPONSE_LABELS[response]}</Text>
           <Text style={styles.elapsedText}>{formatTime(elapsedMs)}</Text>
@@ -210,14 +222,14 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}><View style={{width: 32}} /><Text style={styles.headerTitle}>{receiver.name}</Text><View style={{width: 32}} /></View>
+    <View style={[styles.container, {paddingBottom: insets.bottom}]}>
+      <View style={[styles.header, {paddingTop: insets.top + 12}]}><View style={{width: 32}} /><Text style={styles.headerTitle}>{receiver.name}</Text><View style={{width: 32}} /></View>
       <View style={styles.statusContainer}>
         <Text style={styles.noResponseIcon}>!</Text>
         <Text style={styles.noResponseText}>No response</Text>
         <Text style={styles.elapsedText}>{formatTime(elapsedMs)}</Text>
       </View>
-      <TouchableOpacity style={styles.callButton} onPress={handleCall}><Text style={styles.callButtonText}>📞  Call {receiver.name}</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.callButton} onPress={handleCall}><Icon name="call" size={20} color="#fff" /><Text style={styles.callButtonText}>  Call {receiver.name}</Text></TouchableOpacity>
       <TouchableOpacity style={styles.doneButton} onPress={onClose}><Text style={styles.doneButtonText}>Close</Text></TouchableOpacity>
     </View>
   );
@@ -225,7 +237,7 @@ const BuzzSheet: React.FC<Props> = ({sender, receiver, onClose}) => {
 
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#0D0D0D', paddingHorizontal: 20},
-  header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 56, paddingBottom: 16},
+  header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16},
   closeBtn: {color: '#888', fontSize: 24, padding: 4},
   headerTitle: {color: '#fff', fontSize: 20, fontWeight: '700'},
   label: {color: '#888', fontSize: 14, fontWeight: '600', marginBottom: 12, marginTop: 8},

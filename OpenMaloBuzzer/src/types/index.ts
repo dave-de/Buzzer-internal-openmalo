@@ -8,7 +8,6 @@ export interface User {
   phone: string;
   pin_hash: string;
   role: UserRole;
-  fcm_token: string;
   last_seen_at: number;
   is_active: boolean;
 }
@@ -30,6 +29,33 @@ export interface Reason {
   label: string;
   sort_order: number;
   is_active: boolean;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  member_ids: string[];
+  created_by: string;
+  created_at: number;
+  is_active: boolean;
+}
+
+export interface CallLog {
+  id: string;
+  caller_id: string;
+  receiver_id: string;
+  started_at: number;
+  duration_seconds: number;
+}
+
+export interface VoiceMail {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  audio_url: string;
+  duration_seconds: number;
+  created_at: number;
+  listened: boolean;
 }
 
 export interface BuzzPayload {
